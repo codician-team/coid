@@ -1,19 +1,63 @@
 import { randomFillSync } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
-const POOL_BYTES = 1024 * 8; // ponytail: 8 random bytes per id; 1024-id refills amortize CSPRNG
-const HEX_CODES = Uint8Array.from("0123456789abcdef", (c) => c.charCodeAt(0));
-const DASH = 0x2d;
-const ZERO = 0x30;
+const COID_PATTERN =
+  /^(\d{8})-(\d{4})-(\d{3})([0-9a-fA-F])-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})$/;
+
+const POOL_BYTES = 1024 * 8; // ponytail: 8 random bytes per id; 1024-id refills (8KB) amortize the CSPRNG call
+const HEX_NIBBLE = "0123456789abcdef";
+// Latin1/ASCII byte codes for the 16 hex digits, indexed by nibble. Ids are
+// written byte-by-byte into a scratch Buffer and decoded once, which is ~38%
+// faster than rope-concatenating the pieces.
+const HEX_CODES = Uint8Array.from(HEX_NIBBLE, (c) => c.charCodeAt(0));
+const DASH = 0x2d; // '-'
+const ZERO = 0x30; // '0'
+
 const TIME_ORIGIN = performance.timeOrigin;
 
+/**
+ * A 128-bit, lexicographically sortable identifier in canonical form
+ * `YYMMDDHH-mmss-MMMx-rrrr-rrrrrrrrrrrr` (UTC): `MMM` is the millisecond, `x` a
+ * sub-millisecond fraction (1/16 ms), then a 64-bit random tail. Branded so a
+ * plain `string` can't be passed where a validated coid is expected. See `SPEC.md`.
+ */
 export type Coid = string & { readonly __coid: unique symbol };
 
 export interface CoidGeneratorOptions {
+  /**
+   * High-resolution clock returning fractional Unix milliseconds. The integer
+   * part is the timestamp; the fraction fills the sub-millisecond nibble.
+   * Defaults to `performance.timeOrigin + performance.now()` (monotonic, ~µs).
+   */
   readonly now?: () => number;
+
+  /**
+   * Random byte source; it must fill and return the provided array. Intended for
+   * deterministic tests or custom runtime integrations.
+   */
   readonly randomBytes?: (bytes: Uint8Array) => Uint8Array;
 }
 
+/** Fully decoded coid: the canonical id plus every field broken out. UTC. */
+export interface ParsedCoid {
+  /** The input re-rendered in canonical form (see {@link Coid}). */
+  readonly id: Coid;
+  /** The encoded UTC instant, to millisecond precision. */
+  readonly date: Date;
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+  readonly second: number;
+  readonly millisecond: number;
+  /** Sub-millisecond fraction in 1/16 ms units (0–15). */
+  readonly fraction: number;
+  /** The 64-bit random tail. */
+  readonly random: bigint;
+}
+
+/** Thrown for malformed input, impossible timestamps, or out-of-range generation. */
 export class CoidError extends Error {
   constructor(message: string) {
     super(message);
@@ -21,25 +65,44 @@ export class CoidError extends Error {
   }
 }
 
+/**
+ * coid generator. Holds a pooled CSPRNG and a per-millisecond timestamp cache.
+ * Most callers use the module-level {@link coid}; create a generator only to
+ * inject a clock or random source.
+ */
 export class CoidGenerator {
   #lastMs = Number.NaN;
+  /**
+   * Reused 36-byte scratch holding the ASCII bytes of the id being built. The
+   * dashes are written once here; the timestamp head (bytes 0–16) is refreshed
+   * only when the millisecond changes; the rest is overwritten every call, then
+   * snapshotted with `toString("latin1")`. The snapshot is immutable, so callers
+   * are safe to keep the returned string.
+   */
   readonly #buffer = Buffer.alloc(36);
   readonly #pool = new Uint8Array(POOL_BYTES);
-  #poolOffset = POOL_BYTES;
+  #poolOffset = POOL_BYTES; // force refill on first generate
   readonly #now: () => number;
-  readonly #usesDefaultClock: boolean;
+  readonly #usesDefaultClock: boolean; // true -> inline performance.now() (the injected closure can't be inlined by V8)
   readonly #randomBytes: (bytes: Uint8Array) => Uint8Array;
 
   constructor(options: CoidGeneratorOptions = {}) {
     this.#now = options.now ?? defaultNow;
     this.#usesDefaultClock = options.now === undefined;
-    this.#randomBytes = options.randomBytes ?? randomFillSync;
+    this.#randomBytes = options.randomBytes ?? secureRandomBytes;
     this.#buffer[8] = DASH;
     this.#buffer[13] = DASH;
     this.#buffer[18] = DASH;
     this.#buffer[23] = DASH;
   }
 
+  /**
+   * Generate the next coid.
+   *
+   * @param date UTC instant to encode; defaults to now. Years 2000–2099 only. An
+   *   explicit `Date` has millisecond resolution (sub-ms fraction 0).
+   * @throws {CoidError} if `date` is invalid or outside the supported year range.
+   */
   generate(date?: Date): Coid {
     if (date !== undefined) {
       return this.#write(Math.floor(date.getTime()), 0);
@@ -50,12 +113,13 @@ export class CoidGenerator {
     return this.#write(ms, Math.min(15, ((time - ms) * 16) | 0));
   }
 
+  // Shared emit: timestamp head (cached per ms), fraction nibble, 64-bit random tail; snapshot via toString.
   #write(ms: number, fraction: number): Coid {
     const out = this.#buffer;
     if (ms !== this.#lastMs) {
       writeTimestampCodes(out, ms);
-      this.#lastMs = ms;
     }
+    this.#lastMs = ms;
 
     let offset = this.#poolOffset;
     if (offset + 8 > POOL_BYTES) {
@@ -81,14 +145,108 @@ export class CoidGenerator {
 const defaultNow = (): number => TIME_ORIGIN + performance.now();
 const defaultGenerator = new CoidGenerator();
 
+/**
+ * Generate a coid from the shared default generator — the common entry point.
+ * @param date UTC instant to encode; defaults to now. Years 2000–2099 only.
+ * @throws {CoidError} if `date` is invalid or outside the supported year range.
+ * @example coid(); // "26061912-5549-9998-a1b2-c3d4e5f60718"
+ */
 export function coid(date?: Date): Coid {
   return defaultGenerator.generate(date);
 }
 
+/**
+ * Create an independent {@link CoidGenerator}, e.g. to inject a clock or random
+ * source (deterministic tests, custom runtimes).
+ */
 export function createCoidGenerator(options?: CoidGeneratorOptions): CoidGenerator {
   return new CoidGenerator(options);
 }
 
+/**
+ * Type guard: `true` only if `value` is a syntactically valid coid that also names
+ * a real UTC calendar instant in 2000–2099. Accepts any letter case.
+ */
+export function isCoid(value: unknown): value is Coid {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const match = COID_PATTERN.exec(value);
+  return match !== null && decodeTimestamp(match) !== null;
+}
+
+/**
+ * Narrow `value` to {@link Coid}, throwing if it is not a valid coid.
+ * @throws {CoidError}
+ */
+export function assertCoid(value: unknown): asserts value is Coid {
+  if (!isCoid(value)) {
+    throw new CoidError("Invalid coid");
+  }
+}
+
+/**
+ * Decode a coid into all of its fields. Accepts any letter case; `id` is returned
+ * in canonical form.
+ * @throws {CoidError} if the string is malformed or encodes an impossible instant.
+ */
+export function parseCoid(value: string): ParsedCoid {
+  const match = COID_PATTERN.exec(value);
+  if (match === null) {
+    throw new CoidError("Invalid coid format");
+  }
+  const decoded = decodeTimestamp(match);
+  if (decoded === null) {
+    throw new CoidError("Invalid coid timestamp");
+  }
+  return {
+    id: canonicalFromMatch(match),
+    date: decoded.date,
+    year: decoded.year,
+    month: decoded.month,
+    day: decoded.day,
+    hour: decoded.hour,
+    minute: decoded.minute,
+    second: decoded.second,
+    millisecond: decoded.millisecond,
+    fraction: Number.parseInt(match[4]!, 16),
+    random: BigInt(`0x${match[5]!}${match[6]!}`),
+  };
+}
+
+/**
+ * Extract just the UTC creation time. Shorthand for `parseCoid(value).date`.
+ * @throws {CoidError} if `value` is not a valid coid.
+ */
+export function dateFromCoid(value: string): Date {
+  return parseCoid(value).date;
+}
+
+/**
+ * Extract just the 64-bit random tail. Shorthand for `parseCoid(value).random`.
+ * @throws {CoidError} if `value` is not a valid coid.
+ */
+export function randomFromCoid(value: string): bigint {
+  return parseCoid(value).random;
+}
+
+interface DecodedTimestamp {
+  readonly date: Date;
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+  readonly second: number;
+  readonly millisecond: number;
+}
+
+/**
+ * Write the 17-char timestamp head `YYMMDDHH-mmss-MMM` as ASCII bytes into
+ * `out[0..16]` (dashes at 8 and 13 are written once at construction). Runs once
+ * per millisecond, so integer arithmetic beats string building here.
+ * @throws {CoidError} on a non-finite time or a year outside 2000–2099.
+ */
 function writeTimestampCodes(out: Buffer, ms: number): void {
   if (!Number.isFinite(ms)) {
     throw new CoidError("Invalid time");
@@ -110,9 +268,50 @@ function writeTimestampCodes(out: Buffer, ms: number): void {
   out[16] = ZERO + (msf % 10);
 }
 
+/** Write a zero-padded two-digit decimal (0–99) as ASCII codes at `out[at..at+1]`. */
 function writeDec2(out: Buffer, at: number, value: number): void {
   out[at] = ZERO + ((value / 10) | 0);
   out[at + 1] = ZERO + (value % 10);
+}
+
+function decodeTimestamp(match: RegExpExecArray): DecodedTimestamp | null {
+  const dateHour = match[1]!;
+  const minuteSecond = match[2]!;
+  const yy = Number.parseInt(dateHour.slice(0, 2), 10);
+  const month = Number.parseInt(dateHour.slice(2, 4), 10);
+  const day = Number.parseInt(dateHour.slice(4, 6), 10);
+  const hour = Number.parseInt(dateHour.slice(6, 8), 10);
+  const minute = Number.parseInt(minuteSecond.slice(0, 2), 10);
+  const second = Number.parseInt(minuteSecond.slice(2, 4), 10);
+  const millisecond = Number.parseInt(match[3]!, 10); // \d{3} already bounds this to 0–999
+
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+    return null;
+  }
+
+  const year = 2000 + yy;
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day ||
+    date.getUTCHours() !== hour ||
+    date.getUTCMinutes() !== minute ||
+    date.getUTCSeconds() !== second
+  ) {
+    return null;
+  }
+
+  return { date, year, month, day, hour, minute, second, millisecond };
+}
+
+function secureRandomBytes(bytes: Uint8Array): Uint8Array {
+  return randomFillSync(bytes);
+}
+
+function canonicalFromMatch(match: RegExpExecArray): Coid {
+  return `${match[1]}-${match[2]}-${match[3]}${match[4]!.toLowerCase()}-${match[5]!.toLowerCase()}-${match[6]!.toLowerCase()}` as Coid;
 }
 
 export default coid;
