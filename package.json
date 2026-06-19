@@ -1,0 +1,46 @@
+{
+  "name": "coid",
+  "version": "1.0.0",
+  "description": "128-bit lexicographically sortable, human-readable identifiers.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Altug Ankarali <altug.ankarali@icloud.com>",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "SPEC.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "bench": "npm install --prefix bench --silent && npm run build --silent && node bench/runtime.node.mjs",
+    "test": "npm run build --silent && node --test test/coid.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3"
+  },
+  "keywords": [
+    "id",
+    "uuid",
+    "uuidv7",
+    "ulid",
+    "sortable",
+    "identifier"
+  ]
+}
