@@ -1,0 +1,15 @@
+{
+  "name": "coid-bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Throughput benchmark: coid vs. real ID libraries. Not published; its own deps stay out of the coid package.",
+  "type": "module",
+  "scripts": {
+    "bench": "node runtime.node.mjs"
+  },
+  "dependencies": {
+    "ulid": "^3.0.2",
+    "uuid": "^14.0.0",
+    "uuidv7": "^1.2.1"
+  }
+}
