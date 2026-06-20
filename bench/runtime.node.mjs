@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { monotonicFactory } from "ulid";
 import { uuidv7 } from "uuidv7";
 import { v6 as uuidv6 } from "uuid";
-import { coid } from "../dist/index.js";
+import { coid, createCoidGenerator } from "../dist/index.js";
 
 const DEFAULT_ITERATIONS = 1_000_000;
 const WARMUP_ITERATIONS = 20_000;
@@ -13,9 +13,14 @@ const iterations = parseIterations();
 // coid's direct peer group. Each competitor is the real, published npm package,
 // installed under bench/ and kept out of the coid package, called via its public API.
 const ulid = monotonicFactory(); // ulid's documented multi-ID API; bare ulid() re-detects the PRNG each call
+const webCoid = createCoidGenerator({
+  now: () => globalThis.performance.timeOrigin + globalThis.performance.now(),
+  randomBytes: (bytes) => globalThis.crypto.getRandomValues(bytes),
+});
 
 const cases = [
   { name: "coid()", run: () => coid(), note: "ms time + sub-ms + 64b random" },
+  { name: "coid() web APIs", run: () => webCoid.generate(), note: "same format, injected Web Performance + Web Crypto" },
   { name: "uuidv7", run: () => uuidv7(), note: "ms time + counter/rand (74b)" },
   { name: "ulid", run: () => ulid(), note: "ms time + 80b random (base32)" },
   { name: "uuid v6", run: () => uuidv6(), note: "reordered-v1 time (base16)" },

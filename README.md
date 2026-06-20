@@ -1,10 +1,12 @@
 # coid
 
-`coid` is a 128-bit, lexicographically sortable, UUID-shaped identifier with a
-**human-readable UTC timestamp** baked into the front. It's an alternative to
-UUIDv7/ULID for internal systems that want IDs you can read at a glance and that
-sort chronologically in a database index — coordination-free, no machine IDs, and
-a full **64-bit cryptographic random tail**.
+`coid` is basically **UUIDv7 for humans**: a 128-bit, UUID-shaped identifier that
+sorts chronologically in database indexes, but starts with a UTC timestamp you
+can read without decoding.
+
+Use it where you'd reach for UUIDv7/ULID, but still want IDs that explain
+themselves in logs, URLs, support tickets, and database rows — coordination-free,
+no machine IDs, and a full **64-bit cryptographic random tail**.
 
 ```ts
 import { coid, parseCoid } from "coid";
@@ -14,6 +16,14 @@ const id = coid();
 
 parseCoid(id).date.toISOString();
 // 2026-06-19T12:55:49.999Z
+```
+
+With UUIDv7 you get sortable time. With `coid`, you get sortable time you can
+read:
+
+```text
+coid    26061912-5549-9998-a1b2-c3d4e5f60718  -> 2026-06-19 12:55:49.999 UTC
+uuidv7  01978f77-dbcf-7a50-9f9a-8c0f0d8f8b4a  -> decode it first
 ```
 
 ## Install
@@ -28,10 +38,9 @@ Node.js 20+, ESM-only. No runtime dependencies.
 
 ```text
 26061912-5549-9998-a1b2-c3d4e5f60718
-└──────┘ └──┘ └─┘│ └──┘└──────────┘
-  date    m s  ms │  │      random
-                  │  └ random
-                  └ sub-ms fraction (1/16 ms)
+YYMMDDHH-mmss-MMMx-rrrr-rrrrrrrrrrrr
+date    time  ms │ random tail
+                 └ sub-ms fraction (1/16 ms)
 ```
 
 | Group | Meaning | Encoding |
@@ -111,9 +120,10 @@ packages** for IDs that are both **128-bit / fit a PostgreSQL `UUID` column** an
 ```text
 $ npm run bench                      # Node 24, Apple Silicon — indicative
 coid()                  ~21M ops/sec   1.00x   ms time + sub-ms + 64b random
-uuidv7                  ~3.4M ops/sec   0.21x   ms time + counter/rand (uuidv7)
-ulid                    ~3.2M ops/sec   0.20x   ms time + 80b random (ulid)
-uuid v6                 ~1.3M ops/sec   0.08x   reordered-v1 time (uuid)
+coid() web APIs         ~16M ops/sec   0.73x   injected Web Performance + Web Crypto
+uuidv7                  ~3.4M ops/sec   0.16x   ms time + counter/rand (uuidv7)
+ulid                    ~3.2M ops/sec   0.15x   ms time + 80b random (ulid)
+uuid v6                 ~1.3M ops/sec   0.06x   reordered-v1 time (uuid)
 ```
 
 Every competitor is the actual published library, called through its recommended

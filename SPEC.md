@@ -11,7 +11,7 @@ It combines:
 - High write throughput
 - A coordination-free generation model
 - UUID-compatible textual shape
-- Full utilization of the 128-bit identifier space
+- Native 128-bit UUID storage compatibility
 
 coid is intended as an alternative to UUIDv7, ULID, and similar time-ordered identifiers for systems where operational simplicity and timestamp readability are prioritized.
 
@@ -184,17 +184,26 @@ PostgreSQL `UUID` column.
 # Collision Analysis
 
 Two ids are equal only if every field matches: same millisecond, same
-sub-millisecond fraction (1 of 16), **and** same 64-bit random tail. Per
-millisecond, the collision budget is:
+sub-millisecond fraction, **and** same 64-bit random tail.
+
+Inside a single sub-millisecond bucket, collision resistance comes from the
+64-bit random tail:
 
 ```text
-4 bits (sub-ms fraction)  +  64 bits (random)  =  68 bits
+64 bits random  =  2^64 possible tails
 ```
 
-For two ids landing in the same millisecond, the collision probability is
-approximately `2^-68 ≈ 1 / 2.95 × 10^20`. By the birthday bound, an expected
-collision needs on the order of `2^34 ≈ 17 billion` ids in a single millisecond.
-For internal systems this is negligible.
+If ids are spread uniformly across the 16 sub-millisecond buckets within a
+millisecond, the effective per-millisecond space is:
+
+```text
+4 bits (sub-ms bucket)  +  64 bits (random)  =  68 bits
+```
+
+If a burst lands inside one 1/16-ms bucket, use the conservative 64-bit tail
+alone. By the birthday bound, an expected collision in one bucket needs on the
+order of `2^32 ≈ 4.3 billion` ids in that bucket. For internal systems this is
+negligible.
 
 This is the deliberate trade for the readable decimal timestamp: a dense binary
 timestamp (as in UUIDv7) leaves more bits for entropy, so UUIDv7 has more
@@ -272,5 +281,5 @@ Random:      0xa1b2c3d4e5f60718
 ```
 
 coid achieves the readability of a plain timestamp and the sortability/database
-locality of UUIDv7 from a coordination-free generation model, while retaining the
-full 128-bit identifier space.
+locality of UUIDv7 from a coordination-free generation model, while fitting in
+standard 128-bit UUID storage.
