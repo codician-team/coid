@@ -9,10 +9,7 @@ const DEFAULT_ITERATIONS = 1_000_000;
 const WARMUP_ITERATIONS = 20_000;
 const iterations = parseIterations();
 
-// Scope: only IDs that are 128-bit (fit a PostgreSQL UUID column) AND time-sortable —
-// coid's direct peer group. Each competitor is the real, published npm package,
-// installed under bench/ and kept out of the coid package, called via its public API.
-const ulid = monotonicFactory(); // ulid's documented multi-ID API; bare ulid() re-detects the PRNG each call
+const ulid = monotonicFactory();
 const webCoid = createCoidGenerator({
   now: () => globalThis.performance.timeOrigin + globalThis.performance.now(),
   randomBytes: (bytes) => globalThis.crypto.getRandomValues(bytes),

@@ -5,21 +5,15 @@ const COID_PATTERN =
   /^(\d{8})-(\d{4})-(\d{3})([0-9a-fA-F])-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})$/;
 
 const POOL_BYTES = 1024 * 8; // ponytail: 8 random bytes per id; 1024-id refills (8KB) amortize the CSPRNG call
-const HEX_NIBBLE = "0123456789abcdef";
-// Latin1/ASCII byte codes for the 16 hex digits, indexed by nibble. Ids are
-// written byte-by-byte into a scratch Buffer and decoded once, which is ~38%
-// faster than rope-concatenating the pieces.
-const HEX_CODES = Uint8Array.from(HEX_NIBBLE, (c) => c.charCodeAt(0));
-const DASH = 0x2d; // '-'
-const ZERO = 0x30; // '0'
+const HEX_CODES = Uint8Array.from("0123456789abcdef", (c) => c.charCodeAt(0));
+const DASH = 0x2d;
+const ZERO = 0x30;
 
 const TIME_ORIGIN = performance.timeOrigin;
 
 /**
  * A 128-bit, lexicographically sortable identifier in canonical form
- * `YYMMDDHH-mmss-MMMx-rrrr-rrrrrrrrrrrr` (UTC): `MMM` is the millisecond, `x` a
- * sub-millisecond fraction (1/16 ms), then a 64-bit random tail. Branded so a
- * plain `string` can't be passed where a validated coid is expected. See `SPEC.md`.
+ * `YYMMDDHH-mmss-MMMx-rrrr-rrrrrrrrrrrr` (UTC).
  */
 export type Coid = string & { readonly __coid: unique symbol };
 
@@ -38,11 +32,11 @@ export interface CoidGeneratorOptions {
   readonly randomBytes?: (bytes: Uint8Array) => Uint8Array;
 }
 
-/** Fully decoded coid: the canonical id plus every field broken out. UTC. */
+/** Fully decoded coid. */
 export interface ParsedCoid {
-  /** The input re-rendered in canonical form (see {@link Coid}). */
+  /** Canonical lowercase id. */
   readonly id: Coid;
-  /** The encoded UTC instant, to millisecond precision. */
+  /** Encoded UTC instant, to millisecond precision. */
   readonly date: Date;
   readonly year: number;
   readonly month: number;
@@ -66,29 +60,20 @@ export class CoidError extends Error {
 }
 
 /**
- * coid generator. Holds a pooled CSPRNG and a per-millisecond timestamp cache.
- * Most callers use the module-level {@link coid}; create a generator only to
- * inject a clock or random source.
+ * Independent generator with pooled CSPRNG bytes and a per-ms timestamp cache.
  */
 export class CoidGenerator {
   #lastMs = Number.NaN;
-  /**
-   * Reused 36-byte scratch holding the ASCII bytes of the id being built. The
-   * dashes are written once here; the timestamp head (bytes 0–16) is refreshed
-   * only when the millisecond changes; the rest is overwritten every call, then
-   * snapshotted with `toString("latin1")`. The snapshot is immutable, so callers
-   * are safe to keep the returned string.
-   */
   readonly #buffer = Buffer.alloc(36);
   readonly #pool = new Uint8Array(POOL_BYTES);
-  #poolOffset = POOL_BYTES; // force refill on first generate
+  #poolOffset = POOL_BYTES;
   readonly #now: () => number;
-  readonly #usesDefaultClock: boolean; // true -> inline performance.now() (the injected closure can't be inlined by V8)
+  readonly #inlineClock: boolean;
   readonly #randomBytes: (bytes: Uint8Array) => Uint8Array;
 
   constructor(options: CoidGeneratorOptions = {}) {
     this.#now = options.now ?? defaultNow;
-    this.#usesDefaultClock = options.now === undefined;
+    this.#inlineClock = options.now === undefined;
     this.#randomBytes = options.randomBytes ?? secureRandomBytes;
     this.#buffer[8] = DASH;
     this.#buffer[13] = DASH;
@@ -108,12 +93,11 @@ export class CoidGenerator {
       return this.#write(Math.floor(date.getTime()), 0);
     }
 
-    const time = this.#usesDefaultClock ? TIME_ORIGIN + performance.now() : this.#now();
+    const time = this.#inlineClock ? TIME_ORIGIN + performance.now() : this.#now();
     const ms = Math.floor(time);
     return this.#write(ms, Math.min(15, ((time - ms) * 16) | 0));
   }
 
-  // Shared emit: timestamp head (cached per ms), fraction nibble, 64-bit random tail; snapshot via toString.
   #write(ms: number, fraction: number): Coid {
     const out = this.#buffer;
     if (ms !== this.#lastMs) {
@@ -242,9 +226,8 @@ interface DecodedTimestamp {
 }
 
 /**
- * Write the 17-char timestamp head `YYMMDDHH-mmss-MMM` as ASCII bytes into
- * `out[0..16]` (dashes at 8 and 13 are written once at construction). Runs once
- * per millisecond, so integer arithmetic beats string building here.
+ * Write `YYMMDDHH-mmss-MMM`. Runs once per millisecond; the random tail is
+ * still overwritten on every id.
  * @throws {CoidError} on a non-finite time or a year outside 2000–2099.
  */
 function writeTimestampCodes(out: Buffer, ms: number): void {
@@ -268,7 +251,6 @@ function writeTimestampCodes(out: Buffer, ms: number): void {
   out[16] = ZERO + (msf % 10);
 }
 
-/** Write a zero-padded two-digit decimal (0–99) as ASCII codes at `out[at..at+1]`. */
 function writeDec2(out: Buffer, at: number, value: number): void {
   out[at] = ZERO + ((value / 10) | 0);
   out[at + 1] = ZERO + (value % 10);
@@ -283,7 +265,7 @@ function decodeTimestamp(match: RegExpExecArray): DecodedTimestamp | null {
   const hour = Number.parseInt(dateHour.slice(6, 8), 10);
   const minute = Number.parseInt(minuteSecond.slice(0, 2), 10);
   const second = Number.parseInt(minuteSecond.slice(2, 4), 10);
-  const millisecond = Number.parseInt(match[3]!, 10); // \d{3} already bounds this to 0–999
+  const millisecond = Number.parseInt(match[3]!, 10);
 
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
     return null;

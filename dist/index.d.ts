@@ -1,8 +1,6 @@
 /**
  * A 128-bit, lexicographically sortable identifier in canonical form
- * `YYMMDDHH-mmss-MMMx-rrrr-rrrrrrrrrrrr` (UTC): `MMM` is the millisecond, `x` a
- * sub-millisecond fraction (1/16 ms), then a 64-bit random tail. Branded so a
- * plain `string` can't be passed where a validated coid is expected. See `SPEC.md`.
+ * `YYMMDDHH-mmss-MMMx-rrrr-rrrrrrrrrrrr` (UTC).
  */
 export type Coid = string & {
     readonly __coid: unique symbol;
@@ -20,11 +18,11 @@ export interface CoidGeneratorOptions {
      */
     readonly randomBytes?: (bytes: Uint8Array) => Uint8Array;
 }
-/** Fully decoded coid: the canonical id plus every field broken out. UTC. */
+/** Fully decoded coid. */
 export interface ParsedCoid {
-    /** The input re-rendered in canonical form (see {@link Coid}). */
+    /** Canonical lowercase id. */
     readonly id: Coid;
-    /** The encoded UTC instant, to millisecond precision. */
+    /** Encoded UTC instant, to millisecond precision. */
     readonly date: Date;
     readonly year: number;
     readonly month: number;
@@ -43,9 +41,7 @@ export declare class CoidError extends Error {
     constructor(message: string);
 }
 /**
- * coid generator. Holds a pooled CSPRNG and a per-millisecond timestamp cache.
- * Most callers use the module-level {@link coid}; create a generator only to
- * inject a clock or random source.
+ * Independent generator with pooled CSPRNG bytes and a per-ms timestamp cache.
  */
 export declare class CoidGenerator {
     #private;

@@ -2,13 +2,9 @@ import { randomFillSync } from "node:crypto";
 import { performance } from "node:perf_hooks";
 const COID_PATTERN = /^(\d{8})-(\d{4})-(\d{3})([0-9a-fA-F])-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})$/;
 const POOL_BYTES = 1024 * 8; // ponytail: 8 random bytes per id; 1024-id refills (8KB) amortize the CSPRNG call
-const HEX_NIBBLE = "0123456789abcdef";
-// Latin1/ASCII byte codes for the 16 hex digits, indexed by nibble. Ids are
-// written byte-by-byte into a scratch Buffer and decoded once, which is ~38%
-// faster than rope-concatenating the pieces.
-const HEX_CODES = Uint8Array.from(HEX_NIBBLE, (c) => c.charCodeAt(0));
-const DASH = 0x2d; // '-'
-const ZERO = 0x30; // '0'
+const HEX_CODES = Uint8Array.from("0123456789abcdef", (c) => c.charCodeAt(0));
+const DASH = 0x2d;
+const ZERO = 0x30;
 const TIME_ORIGIN = performance.timeOrigin;
 /** Thrown for malformed input, impossible timestamps, or out-of-range generation. */
 export class CoidError extends Error {
@@ -18,28 +14,19 @@ export class CoidError extends Error {
     }
 }
 /**
- * coid generator. Holds a pooled CSPRNG and a per-millisecond timestamp cache.
- * Most callers use the module-level {@link coid}; create a generator only to
- * inject a clock or random source.
+ * Independent generator with pooled CSPRNG bytes and a per-ms timestamp cache.
  */
 export class CoidGenerator {
     #lastMs = Number.NaN;
-    /**
-     * Reused 36-byte scratch holding the ASCII bytes of the id being built. The
-     * dashes are written once here; the timestamp head (bytes 0–16) is refreshed
-     * only when the millisecond changes; the rest is overwritten every call, then
-     * snapshotted with `toString("latin1")`. The snapshot is immutable, so callers
-     * are safe to keep the returned string.
-     */
     #buffer = Buffer.alloc(36);
     #pool = new Uint8Array(POOL_BYTES);
-    #poolOffset = POOL_BYTES; // force refill on first generate
+    #poolOffset = POOL_BYTES;
     #now;
-    #usesDefaultClock; // true -> inline performance.now() (the injected closure can't be inlined by V8)
+    #inlineClock;
     #randomBytes;
     constructor(options = {}) {
         this.#now = options.now ?? defaultNow;
-        this.#usesDefaultClock = options.now === undefined;
+        this.#inlineClock = options.now === undefined;
         this.#randomBytes = options.randomBytes ?? secureRandomBytes;
         this.#buffer[8] = DASH;
         this.#buffer[13] = DASH;
@@ -57,11 +44,10 @@ export class CoidGenerator {
         if (date !== undefined) {
             return this.#write(Math.floor(date.getTime()), 0);
         }
-        const time = this.#usesDefaultClock ? TIME_ORIGIN + performance.now() : this.#now();
+        const time = this.#inlineClock ? TIME_ORIGIN + performance.now() : this.#now();
         const ms = Math.floor(time);
         return this.#write(ms, Math.min(15, ((time - ms) * 16) | 0));
     }
-    // Shared emit: timestamp head (cached per ms), fraction nibble, 64-bit random tail; snapshot via toString.
     #write(ms, fraction) {
         const out = this.#buffer;
         if (ms !== this.#lastMs) {
@@ -184,9 +170,8 @@ export function randomFromCoid(value) {
     return parseCoid(value).random;
 }
 /**
- * Write the 17-char timestamp head `YYMMDDHH-mmss-MMM` as ASCII bytes into
- * `out[0..16]` (dashes at 8 and 13 are written once at construction). Runs once
- * per millisecond, so integer arithmetic beats string building here.
+ * Write `YYMMDDHH-mmss-MMM`. Runs once per millisecond; the random tail is
+ * still overwritten on every id.
  * @throws {CoidError} on a non-finite time or a year outside 2000–2099.
  */
 function writeTimestampCodes(out, ms) {
@@ -209,7 +194,6 @@ function writeTimestampCodes(out, ms) {
     out[15] = ZERO + (((msf / 10) | 0) % 10);
     out[16] = ZERO + (msf % 10);
 }
-/** Write a zero-padded two-digit decimal (0–99) as ASCII codes at `out[at..at+1]`. */
 function writeDec2(out, at, value) {
     out[at] = ZERO + ((value / 10) | 0);
     out[at + 1] = ZERO + (value % 10);
@@ -223,7 +207,7 @@ function decodeTimestamp(match) {
     const hour = Number.parseInt(dateHour.slice(6, 8), 10);
     const minute = Number.parseInt(minuteSecond.slice(0, 2), 10);
     const second = Number.parseInt(minuteSecond.slice(2, 4), 10);
-    const millisecond = Number.parseInt(match[3], 10); // \d{3} already bounds this to 0–999
+    const millisecond = Number.parseInt(match[3], 10);
     if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
         return null;
     }
