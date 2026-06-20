@@ -76,6 +76,10 @@ const p = parseCoid(id);
 p.date; p.year; p.month; /* … */ p.fraction; p.random; // fraction: 0–15, random: bigint
 ```
 
+Call `coid()` with no argument for sub-millisecond precision. Passing a `Date`
+or a clock based on `Date.now()` has only millisecond precision, so the `x`
+nibble is always `0`.
+
 ### Independent generators
 
 The module-level `coid()` shares one default generator. To inject a clock or
