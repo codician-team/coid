@@ -9,7 +9,7 @@ themselves in logs, URLs, support tickets, and database rows — coordination-fr
 no machine IDs, and a full **64-bit cryptographic random tail**.
 
 ```ts
-import { coid, parseCoid } from "coid";
+import { coid, parseCoid } from "@codician-team/coid";
 
 const id = coid();
 // 26061912-5549-9998-a1b2-c3d4e5f60718
@@ -29,7 +29,7 @@ uuidv7  01978f77-dbcf-7a50-9f9a-8c0f0d8f8b4a  -> decode it first
 ## Install
 
 ```sh
-npm install coid
+npm install @codician-team/coid
 ```
 
 Node.js 20+, ESM-only. No runtime dependencies.
@@ -64,7 +64,7 @@ the bit layout, collision analysis, and sorting guarantees.
 ## Usage
 
 ```ts
-import { coid, isCoid, parseCoid, assertCoid } from "coid";
+import { coid, isCoid, parseCoid, assertCoid } from "@codician-team/coid";
 
 coid();                              // now
 coid(new Date("2030-01-01T00:00Z")); // a specific UTC instant
@@ -82,7 +82,7 @@ The module-level `coid()` shares one default generator. To inject a clock or
 random source (handy in tests or custom runtimes), create your own:
 
 ```ts
-import { createCoidGenerator } from "coid";
+import { createCoidGenerator } from "@codician-team/coid";
 
 const gen = createCoidGenerator({
   now: () => performance.timeOrigin + performance.now(), // fractional Unix ms
@@ -127,9 +127,9 @@ uuid v6                 ~1.3M ops/sec   0.06x   reordered-v1 time (uuid)
 ```
 
 Every competitor is the actual published library, called through its recommended
-API. They live in `bench/`'s own `package.json`, so **`coid` itself ships with
-zero dependencies** and none reach consumers. Run `npm run bench` on your own
-hardware for real numbers (it installs the bench deps on first run).
+API. They live in `bench/`'s own `package.json`, so the package itself ships
+with **zero dependencies** and none reach consumers. Run `npm run bench` on your
+own hardware for real numbers (it installs the bench deps on first run).
 
 ## License
 

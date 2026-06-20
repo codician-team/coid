@@ -1,5 +1,5 @@
 {
-  "name": "coid",
+  "name": "@codician-team/coid",
   "version": "1.0.0",
   "description": "128-bit lexicographically sortable, human-readable identifiers.",
   "type": "module",
