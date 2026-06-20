@@ -4,7 +4,15 @@
   "description": "128-bit lexicographically sortable, human-readable identifiers.",
   "type": "module",
   "license": "MIT",
-  "author": "Altug Ankarali <altug.ankarali@icloud.com>",
+  "author": "Codician",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codician-team/coid.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codician-team/coid/issues"
+  },
+  "homepage": "https://github.com/codician-team/coid#readme",
   "sideEffects": false,
   "engines": {
     "node": ">=20"
