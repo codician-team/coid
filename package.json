@@ -1,7 +1,7 @@
 {
   "name": "@codician-team/coid",
   "version": "1.0.0",
-  "description": "128-bit lexicographically sortable, human-readable identifiers.",
+  "description": "Human-readable, time-sortable UUID-style IDs for TypeScript, JavaScript, Node.js, and PostgreSQL.",
   "type": "module",
   "license": "MIT",
   "author": "Codician",
@@ -43,12 +43,25 @@
     "@types/node": "^24.0.0",
     "typescript": "^5.8.3"
   },
+  {
   "keywords": [
-    "id",
+    "coid",
     "uuid",
     "uuidv7",
     "ulid",
-    "sortable",
-    "identifier"
+    "id",
+    "identifier",
+    "sortable-id",
+    "time-sortable",
+    "time-sortable-id",
+    "chronological-id",
+    "postgresql",
+    "typescript",
+    "javascript",
+    "node",
+    "nodejs",
+    "esm",
+    "zero-dependencies"
   ]
+}
 }
