@@ -1,5 +1,11 @@
 # coid
 
+[![npm version](https://img.shields.io/npm/v/@codician-team/coid.svg)](https://www.npmjs.com/package/@codician-team/coid)
+[![npm downloads](https://img.shields.io/npm/dm/@codician-team/coid.svg)](https://www.npmjs.com/package/@codician-team/coid)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ready-blue.svg)](https://www.typescriptlang.org/)
+[![zero dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](https://www.npmjs.com/package/@codician-team/coid)
+
 **Human-readable, time-sortable UUID-style IDs for TypeScript, JavaScript, Node.js, and PostgreSQL.**
 
 `coid` is basically **UUIDv7 for humans**: a 128-bit, UUID-shaped identifier that
@@ -10,6 +16,8 @@ Use it where you'd normally reach for **UUIDv7**, **ULID**, or another
 **time-sortable ID**, but still want identifiers that explain themselves in logs,
 URLs, support tickets, analytics events, and database rows — with no coordination,
 no machine IDs, and a full **64-bit cryptographic random tail**.
+
+If you are comparing UUIDv4, UUIDv7, ULID, KSUID, Nano ID, CUID, or Snowflake-style IDs, `coid` is closest to UUIDv7/ULID: sortable, distributed, and coordination-free, but with a timestamp that remains readable in the ID itself.
 
 ```ts
 import { coid, parseCoid } from "@codician-team/coid";
@@ -46,6 +54,20 @@ npm install @codician-team/coid
 ```
 
 Node.js 20+, ESM-only. No runtime dependencies.
+
+## Use cases
+
+`coid` is useful for:
+
+- database primary keys
+- PostgreSQL `UUID` columns
+- event IDs
+- audit logs
+- job IDs
+- support-ticket references
+- analytics events
+- URL-safe public identifiers
+- distributed systems that need coordination-free sortable IDs
 
 ## The format
 
